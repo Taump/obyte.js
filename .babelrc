@@ -1,8 +1,6 @@
 {
-  "presets": ["env"],
-  "plugins": [
-    "babel-plugin-add-module-exports",
-    "transform-runtime",
-    "transform-object-rest-spread"
-  ]
+  "presets": [
+    ["@babel/preset-env", { "targets": { "node": "12", "browsers": ["defaults", "not IE 11"] } }]
+  ],
+  "plugins": ["babel-plugin-add-module-exports", "@babel/plugin-transform-runtime"]
 }

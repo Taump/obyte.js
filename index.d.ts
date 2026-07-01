@@ -131,6 +131,8 @@ declare namespace Obyte {
 
     onConnect(callback: () => void);
 
+    onError(callback: (err: any) => void);
+
     /**
      * Close underlying WebSocket client.
      */
@@ -371,7 +373,7 @@ declare namespace Obyte {
 
   interface WIFReturn {
     readonly version: number;
-    readonly privateKey: Buffer;
+    readonly privateKey: Uint8Array;
     readonly compressed: boolean;
   }
 
@@ -384,7 +386,7 @@ declare namespace Obyte {
   module utils {
     function isValidAddress(address: string): boolean;
     function getChash160(object: object | Array<any>): string;
-    function toWif(privateKey: Buffer, testnet: boolean): string;
+    function toWif(privateKey: Uint8Array, testnet: boolean): string;
     function fromWif(string: string, testnet: boolean): WIFReturn;
     function signMessage(message: any, options: object): IObjUnit;
     function validateSignedMessage(objSignedMessage: object, address: string | null, message: any | null): boolean;

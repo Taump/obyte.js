@@ -91,6 +91,35 @@ client.post.payment(params, wif, function(err, result) {
 });
 ```
 
+## Migration to 0.2.0
+
+`0.2.0` modernizes the internals (updated dependencies, pure-JS crypto, a much smaller
+browser bundle) and is **backward compatible for normal use** — addresses, signatures and
+WIF keys are byte-for-byte identical, and messages signed by older versions still validate
+(and vice-versa). There is **one** breaking change to watch for.
+
+### `utils.fromWif().privateKey` is now a `Uint8Array` (was a `Buffer`)
+
+The bytes are exactly the same — only the type changed, so `Buffer`-specific methods behave
+differently:
+
+```js
+const { privateKey } = obyte.utils.fromWif(wif, false);
+
+privateKey.toString('hex'); // ❌ 0.1.x: "42...42"  |  0.2.0: "66,66,...,66"
+privateKey.equals(other);   // ❌ Uint8Array has no .equals()
+```
+
+If your code consumed the private key as a `Buffer`, wrap it once:
+
+```js
+const privateKey = Buffer.from(obyte.utils.fromWif(wif, false).privateKey);
+// now .toString('hex'), .equals(), etc. work as before
+```
+
+Everything else is unchanged. `utils.toWif()` and `utils.signMessage({ privateKey })` still
+accept **both** `Buffer` and `Uint8Array`, so passing a `Buffer` keeps working.
+
 ## License
 
 [MIT](LICENSE).

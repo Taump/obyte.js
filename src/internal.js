@@ -110,23 +110,23 @@ export const verify = (hash, signature, pubKey) => {
   return ecdsa.ecdsaVerify(sigBuf, hash, pubKeyBuf);
 };
 
-function buffer2bin(buf) {
-  const bytes = [];
-  for (let i = 0; i < buf.length; i += 1) {
-    let bin = buf[i].toString(2);
+function bytes2bin(bytes) {
+  const bits = [];
+  for (let i = 0; i < bytes.length; i += 1) {
+    let bin = bytes[i].toString(2);
     if (bin.length < 8)
       // pad with zeros
       bin = ZERO_STRING.substring(bin.length, 8) + bin;
-    bytes.push(bin);
+    bits.push(bin);
   }
-  return bytes.join('');
+  return bits.join('');
 }
 
-function bin2buffer(bin) {
+function bin2bytes(bin) {
   const len = bin.length / 8;
-  const buf = new Uint8Array(len);
-  for (let i = 0; i < len; i += 1) buf[i] = parseInt(bin.substr(i * 8, 8), 2);
-  return buf;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) bytes[i] = parseInt(bin.substr(i * 8, 8), 2);
+  return bytes;
 }
 
 function checkLength(chashLength) {
@@ -305,10 +305,10 @@ function getChash(data, chashLength) {
   const truncatedHash = chashLength === 160 ? hash.slice(4) : hash; // drop first 4 bytes if 160
   const checksum = getChecksum(truncatedHash);
 
-  const binCleanData = buffer2bin(truncatedHash);
-  const binChecksum = buffer2bin(checksum);
+  const binCleanData = bytes2bin(truncatedHash);
+  const binChecksum = bytes2bin(checksum);
   const binChash = mixChecksumIntoCleanData(binCleanData, binChecksum);
-  const chash = bin2buffer(binChash);
+  const chash = bin2bytes(binChash);
   return chashLength === 160 ? base32.encode(chash) : base64.encode(chash);
 }
 
@@ -324,10 +324,10 @@ export function isChashValid(encoded) {
     console.log(e);
     return false;
   }
-  const binChash = buffer2bin(chash);
+  const binChash = bytes2bin(chash);
   const separated = separateIntoCleanDataAndChecksum(binChash);
-  const cleanData = bin2buffer(separated.cleanData);
-  const checksum = bin2buffer(separated.checksum);
+  const cleanData = bin2bytes(separated.cleanData);
+  const checksum = bin2bytes(separated.checksum);
   return bytesEqual(checksum, getChecksum(cleanData));
 }
 

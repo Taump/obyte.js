@@ -11,13 +11,17 @@ if (typeof window !== 'undefined') {
   WebSocket = require('ws'); // eslint-disable-line global-require
 }
 
-const wait = (ws, cb) => {
+const wait = (ws, cb, onClosed) => {
   setTimeout(() => {
-    if (ws.readyState === 2 || ws.readyState === 3) return; // closed
+    if (ws.readyState === 2 || ws.readyState === 3) {
+      // closing or closed: the message can no longer be sent
+      if (onClosed) onClosed();
+      return;
+    }
     if (ws.readyState === 1) {
       if (cb !== null) cb();
     } else {
-      wait(ws, cb);
+      wait(ws, cb, onClosed);
     }
   }, 5);
 };
@@ -27,20 +31,29 @@ export default class WSClient {
     this.address = address;
     this.open = false;
     this.shouldClose = false;
+    this.reconnect = reconnect || false;
     this.closeIfError = closeIfError || false;
     this.queue = {};
+    this.lastTag = 0;
     this.lastTimestamp = Date.now();
     this.lastWakeTimestamp = Date.now();
     this.lastSentTimestamp = null;
     this.notifications = [];
     this.onConnectCallbacks = [];
+    this.onErrorCallbacks = [];
     this.connect = () => {
       this.notifications = [];
       const ws = new WebSocket(address);
 
-      ws.addEventListener('message', payload => {
+      ws.addEventListener('message', (payload) => {
         this.lastTimestamp = Date.now();
-        const message = JSON.parse(payload.data);
+        let message;
+        try {
+          message = JSON.parse(payload.data);
+        } catch (e) {
+          // ignore malformed messages instead of crashing the process
+          return;
+        }
         if (!message || !Array.isArray(message) || message.length !== 2) return;
         const type = message[0];
         const { tag } = message[1];
@@ -83,7 +96,7 @@ export default class WSClient {
           delete this.queue[tag]; // cleanup
           callback(error, result);
         } else {
-          this.notifications.forEach(n => n(null, message));
+          this.notifications.forEach((n) => n(null, message));
         }
       });
 
@@ -96,13 +109,20 @@ export default class WSClient {
           this.shouldClose = false;
         } else {
           this.open = true;
-          this.onConnectCallbacks.forEach(cb => cb());
+          this.onConnectCallbacks.forEach((cb) => cb());
         }
       });
 
       ws.addEventListener('close', () => {
         this.open = false;
-        if (reconnect) {
+        // reject every request still awaiting a response so its promise doesn't hang
+        // forever when the socket drops after the request was sent
+        Object.keys(this.queue).forEach((tag) => {
+          const cb = this.queue[tag];
+          delete this.queue[tag];
+          if (cb) cb(new Error('connection closed before response'), null);
+        });
+        if (this.reconnect) {
           this.ws = null;
           setTimeout(() => {
             this.connect();
@@ -110,9 +130,17 @@ export default class WSClient {
         }
       });
 
-      ws.addEventListener('error', err => {
-        if (this.closeIfError) {
+      ws.addEventListener('error', (err) => {
+        // hand the error to subscribers; if nobody subscribed, log it so a failed
+        // connection is never swallowed silently (the default when closeIfError is false)
+        if (this.onErrorCallbacks.length) {
+          this.onErrorCallbacks.forEach((cb) => cb(err));
+        } else {
           console.error('WebSocket error', err);
+        }
+        if (this.closeIfError) {
+          // don't reconnect after an error the caller asked us to close on
+          this.reconnect = false;
           this.close();
         }
       });
@@ -126,17 +154,30 @@ export default class WSClient {
     this.onConnectCallbacks.push(cb);
   }
 
+  onError(cb) {
+    this.onErrorCallbacks.push(cb);
+  }
+
   subscribe(cb) {
     this.notifications.push(cb);
   }
 
-  send(message) {
-    wait(this.ws, () => {
-      this.ws.send(JSON.stringify(message));
-    });
+  send(message, onError) {
+    if (!this.ws) {
+      if (onError) onError();
+      return;
+    }
+    wait(
+      this.ws,
+      () => {
+        this.ws.send(JSON.stringify(message));
+      },
+      onError,
+    );
   }
 
   close() {
+    if (!this.ws) return;
     if (this.ws.readyState === WebSocket.CONNECTING) {
       this.shouldClose = true;
     } else {
@@ -166,11 +207,19 @@ export default class WSClient {
     }
     const request = { command };
     if (params) request.params = params;
-    request.tag = Math.random()
-      .toString(36)
-      .substring(7);
+    // a monotonic counter guarantees the tag is unique within this connection
+    // (the previous Math.random().substring(7) could yield 2-char or colliding tags);
+    // the random suffix keeps tags hard to guess
+    this.lastTag += 1;
+    request.tag = `${this.lastTag}.${Math.random().toString(36).slice(2)}`;
     this.queue[request.tag] = cb;
-    this.send(['request', request]);
+    this.send(['request', request], () => {
+      // socket was closed before we could send: reject instead of leaking the callback forever
+      if (this.queue[request.tag]) {
+        delete this.queue[request.tag];
+        if (cb) cb(new Error(`connection closed before "${command}" request was sent`), null);
+      }
+    });
   }
 
   respond(command, tag, message) {

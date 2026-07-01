@@ -24,7 +24,7 @@ async function getSymbolByAsset(tokenRegistryAddress, asset) {
   if (`a2s_${asset}` in aaStateVars) {
     return aaStateVars[`a2s_${asset}`];
   }
-  return asset.replace(/[+=]/, '').substr(0, 6);
+  return asset.replace(/[+=]/g, '').substr(0, 6);
 }
 
 async function getAssetBySymbol(tokenRegistryAddress, symbol) {

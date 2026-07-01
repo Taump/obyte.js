@@ -53,9 +53,9 @@ export default class Client {
       async message(app, payload, options = {}) {
         const messages = app === 'multi' ? payload : [{ app, payload }];
 
-        messages.sort(a => {
-          return a.app === 'payment' && !a.payload.asset ? -1 : 1; // we place byte payment message first
-        });
+        messages.sort(
+          (a) => (a.app === 'payment' && !a.payload.asset ? -1 : 1) // we place byte payment message first
+        );
         if (messages[0].app !== 'payment' || messages[0].payload.asset)
           // if no byte payment, we add one
           messages.unshift({ app: 'payment', payload: { outputs: [] } });
@@ -178,11 +178,14 @@ export default class Client {
       },
     };
 
-    Object.keys(expandApi).forEach(funcName => {
-      expandApi[funcName].bind(this.api);
+    Object.assign(this.api, mapAPI(api, requestAsync));
+    // bind expandApi helpers to this.api so `this.getAaStateVars(...)` works even
+    // when a method is destructured off the api object (the previous loop discarded
+    // the result of .bind(), so it was a no-op)
+    Object.keys(expandApi).forEach((funcName) => {
+      this.api[funcName] = expandApi[funcName].bind(this.api);
     });
 
-    Object.assign(this.api, mapAPI(api, requestAsync), expandApi);
     Object.assign(this.compose, mapAPI(apps, this.compose.message));
     Object.assign(this.post, mapAPI(apps, this.post.message));
   }
@@ -201,6 +204,10 @@ export default class Client {
 
   onConnect(cb) {
     this.client.onConnect(cb);
+  }
+
+  onError(cb) {
+    this.client.onError(cb);
   }
 
   subscribe(cb) {

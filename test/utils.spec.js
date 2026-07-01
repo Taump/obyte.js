@@ -22,7 +22,11 @@ describe('utils', () => {
     it('should convert wif to private key', () => {
       const wif = '5JHx9t7DSSnYwroYbBFodKLDGZggsgfBpaMFok6VMPPMu49UJgA';
       const { privateKey } = utils.fromWif(wif, false);
-      expect(privateKey.toString('base64')).toEqual('PtEd3lkAsTmEhk4eIMrzda1DCDM0WyFellEZBawTZXg=');
+      // fromWif returns a Uint8Array (works in the browser without a Buffer polyfill)
+      expect(privateKey).toBeInstanceOf(Uint8Array);
+      expect(Buffer.from(privateKey).toString('base64')).toEqual(
+        'PtEd3lkAsTmEhk4eIMrzda1DCDM0WyFellEZBawTZXg=',
+      );
     });
   });
 
@@ -122,6 +126,13 @@ describe('utils', () => {
       expect(
         utils.validateSignedMessage(objSignedMessage, 'J5GQCHQM7WJGTIQ25FDPR4QKDGCADJGT', 'a'),
       ).toEqual(false);
+    });
+    it('should return false (not throw) for non-object input', () => {
+      expect(utils.validateSignedMessage(null)).toEqual(false);
+      expect(utils.validateSignedMessage(undefined)).toEqual(false);
+      expect(utils.validateSignedMessage('not an object')).toEqual(false);
+      expect(utils.validateSignedMessage(42)).toEqual(false);
+      expect(utils.validateSignedMessage([])).toEqual(false);
     });
   });
 });

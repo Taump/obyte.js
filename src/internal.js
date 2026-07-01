@@ -1,6 +1,7 @@
 import ecdsa from 'secp256k1';
-import createHash from 'create-hash';
-import base32 from 'thirty-two';
+import { sha256 } from '@noble/hashes/sha256';
+import { ripemd160 } from '@noble/hashes/ripemd160';
+import { base32, base64 } from '@scure/base';
 
 const PARENT_UNITS_SIZE = 2 * 44;
 const PARENT_UNITS_KEY_SIZE = 'parent_units'.length;
@@ -10,14 +11,23 @@ const STRING_JOIN_CHAR = '\x00';
 const ZERO_STRING = '00000000';
 const ARR_RELATIVE_OFFSETS = PI.split('');
 
-export const camelCase = input =>
+// Crypto helpers on @noble/hashes + @scure/base (pure JS, Uint8Array-native, so the browser
+// bundle needs no Buffer polyfill). Strings are utf8-encoded to match the previous
+// `createHash(...).update(str, 'utf8')` byte-for-byte.
+const utf8 = new TextEncoder();
+const toBytes = (data) => (typeof data === 'string' ? utf8.encode(data) : data);
+const sha256Digest = (data) => sha256(toBytes(data));
+const ripemd160Digest = (data) => ripemd160(toBytes(data));
+const bytesEqual = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+
+export const camelCase = (input) =>
   input
     .split('/')
     .pop()
     .split('_')
-    .map(p => p.charAt(0).toUpperCase() + p.slice(1))
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
     .join('')
-    .replace(/^\w/, c => c.toLowerCase());
+    .replace(/^\w/, (c) => c.toLowerCase());
 
 export async function createPaymentMessage(
   client,
@@ -39,7 +49,7 @@ export async function createPaymentMessage(
     asset,
   });
 
-  const inputs = coinsForAmount.inputs_with_proofs.map(input => input.input);
+  const inputs = coinsForAmount.inputs_with_proofs.map((input) => input.input);
 
   const payload = {
     inputs,
@@ -82,40 +92,41 @@ export const mapAPI = (api, impl) =>
         const promise = impl(name, ...params);
 
         if (!cb) return promise;
-        return promise.then(result => cb(null, result)).catch(err => cb(err, null));
+        return promise.then((result) => cb(null, result)).catch((err) => cb(err, null));
       },
     }),
     {},
   );
 
 export const sign = (hash, privKey) => {
-  const res = ecdsa.sign(hash, privKey);
-  return res.signature.toString('base64');
+  const res = ecdsa.ecdsaSign(hash, privKey);
+  return base64.encode(res.signature);
 };
 
 export const verify = (hash, signature, pubKey) => {
-  const sigBuf = typeof signature === 'string' ? Buffer.from(signature, 'base64') : signature;
-  const pubKeyBuf = typeof pubKey === 'string' ? Buffer.from(pubKey, 'base64') : pubKey;
-  return ecdsa.verify(hash, sigBuf, pubKeyBuf);
+  const sigBuf = typeof signature === 'string' ? base64.decode(signature) : signature;
+  const pubKeyBuf = typeof pubKey === 'string' ? base64.decode(pubKey) : pubKey;
+  // secp256k1 v5: ecdsaVerify(signature, message, publicKey) — arg order differs from v3's verify(message, signature, publicKey)
+  return ecdsa.ecdsaVerify(sigBuf, hash, pubKeyBuf);
 };
 
-function buffer2bin(buf) {
-  const bytes = [];
-  for (let i = 0; i < buf.length; i += 1) {
-    let bin = buf[i].toString(2);
+function bytes2bin(bytes) {
+  const bits = [];
+  for (let i = 0; i < bytes.length; i += 1) {
+    let bin = bytes[i].toString(2);
     if (bin.length < 8)
       // pad with zeros
       bin = ZERO_STRING.substring(bin.length, 8) + bin;
-    bytes.push(bin);
+    bits.push(bin);
   }
-  return bytes.join('');
+  return bits.join('');
 }
 
-function bin2buffer(bin) {
+function bin2bytes(bin) {
   const len = bin.length / 8;
-  const buf = Buffer.alloc(len);
-  for (let i = 0; i < len; i += 1) buf[i] = parseInt(bin.substr(i * 8, 8), 2);
-  return buf;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) bytes[i] = parseInt(bin.substr(i * 8, 8), 2);
+  return bytes;
 }
 
 function checkLength(chashLength) {
@@ -124,10 +135,8 @@ function checkLength(chashLength) {
 }
 
 function getChecksum(cleanData) {
-  const fullChecksum = createHash('sha256')
-    .update(cleanData)
-    .digest();
-  return Buffer.from([fullChecksum[5], fullChecksum[13], fullChecksum[21], fullChecksum[29]]);
+  const fullChecksum = sha256Digest(cleanData);
+  return new Uint8Array([fullChecksum[5], fullChecksum[13], fullChecksum[21], fullChecksum[29]]);
 }
 
 function getNakedUnit(objUnit) {
@@ -174,7 +183,7 @@ export function getSourceString(obj) {
         } else {
           const keys = Object.keys(variable).sort();
           if (keys.length === 0) throw Error(`empty object in ${JSON.stringify(obj)}`);
-          keys.forEach(key => {
+          keys.forEach((key) => {
             if (typeof variable[key] === 'undefined')
               throw Error(`undefined at ${key} of ${JSON.stringify(obj)}`);
             arrComponents.push(key);
@@ -210,7 +219,7 @@ export function getJsonSourceString(obj) {
         const keys = Object.keys(variable).sort(); // eslint-disable-line no-case-declarations
         if (keys.length === 0) throw Error(`empty object in ${JSON.stringify(obj)}`);
         return `{${keys
-          .map(key => `${JSON.stringify(key)}:${stringify(variable[key])}`)
+          .map((key) => `${JSON.stringify(key)}:${stringify(variable[key])}`)
           .join(',')}}`;
       default:
         throw Error(
@@ -292,17 +301,15 @@ function mixChecksumIntoCleanData(binCleanData, binChecksum) {
 
 function getChash(data, chashLength) {
   checkLength(chashLength);
-  const hash = createHash(chashLength === 160 ? 'ripemd160' : 'sha256')
-    .update(data, 'utf8')
-    .digest();
+  const hash = chashLength === 160 ? ripemd160Digest(data) : sha256Digest(data);
   const truncatedHash = chashLength === 160 ? hash.slice(4) : hash; // drop first 4 bytes if 160
   const checksum = getChecksum(truncatedHash);
 
-  const binCleanData = buffer2bin(truncatedHash);
-  const binChecksum = buffer2bin(checksum);
+  const binCleanData = bytes2bin(truncatedHash);
+  const binChecksum = bytes2bin(checksum);
   const binChash = mixChecksumIntoCleanData(binCleanData, binChecksum);
-  const chash = bin2buffer(binChash);
-  return chashLength === 160 ? base32.encode(chash).toString() : chash.toString('base64');
+  const chash = bin2bytes(binChash);
+  return chashLength === 160 ? base32.encode(chash) : base64.encode(chash);
 }
 
 export function isChashValid(encoded) {
@@ -312,23 +319,23 @@ export function isChashValid(encoded) {
     // 160/5 = 32, 288/6 = 48
     throw Error(`wrong encoded length: ${encodedLength}`);
   try {
-    chash = encodedLength === 32 ? base32.decode(encoded) : Buffer.from(encoded, 'base64');
+    chash = encodedLength === 32 ? base32.decode(encoded) : base64.decode(encoded);
   } catch (e) {
     console.log(e);
     return false;
   }
-  const binChash = buffer2bin(chash);
+  const binChash = bytes2bin(chash);
   const separated = separateIntoCleanDataAndChecksum(binChash);
-  const cleanData = bin2buffer(separated.cleanData);
-  const checksum = bin2buffer(separated.checksum);
-  return checksum.equals(getChecksum(cleanData));
+  const cleanData = bin2bytes(separated.cleanData);
+  const checksum = bin2bytes(separated.checksum);
+  return bytesEqual(checksum, getChecksum(cleanData));
 }
 
 export function chashGetChash160(data) {
   return getChash(data, 160);
 }
 
-export const toPublicKey = privKey => ecdsa.publicKeyCreate(privKey).toString('base64');
+export const toPublicKey = (privKey) => base64.encode(ecdsa.publicKeyCreate(privKey));
 
 export function getLength(value, bWithKeys) {
   if (value === null) return 0;
@@ -340,11 +347,11 @@ export function getLength(value, bWithKeys) {
     case 'object': {
       let len = 0;
       if (Array.isArray(value)) {
-        value.forEach(element => {
+        value.forEach((element) => {
           len += getLength(element, bWithKeys);
         });
       } else {
-        Object.keys(value).forEach(key => {
+        Object.keys(value).forEach((key) => {
           if (typeof value[key] === 'undefined')
             throw Error(`undefined at ${key} of ${JSON.stringify(value)}`);
           if (bWithKeys) len += key.length;
@@ -384,9 +391,7 @@ export function getTotalPayloadSize(objUnit, bWithKeys) {
 
 export function getBase64Hash(obj, bJsonBased) {
   const sourceString = bJsonBased ? getJsonSourceString(obj) : getSourceString(obj);
-  return createHash('sha256')
-    .update(sourceString, 'utf8')
-    .digest('base64');
+  return base64.encode(sha256Digest(sourceString));
 }
 
 export function getUnitHashToSign(objUnit) {
@@ -394,9 +399,7 @@ export function getUnitHashToSign(objUnit) {
   for (let i = 0; i < objNakedUnit.authors.length; i += 1)
     delete objNakedUnit.authors[i].authentifiers;
   const sourceString = getJsonSourceString(objNakedUnit);
-  return createHash('sha256')
-    .update(sourceString, 'utf8')
-    .digest();
+  return sha256Digest(sourceString);
 }
 
 export function getSignedPackageHashToSign(signedPackage) {
@@ -404,9 +407,7 @@ export function getSignedPackageHashToSign(signedPackage) {
   for (let i = 0; i < unsignedPackage.authors.length; i += 1)
     delete unsignedPackage.authors[i].authentifiers;
   const sourceString = getJsonSourceString(unsignedPackage);
-  return createHash('sha256')
-    .update(sourceString, 'utf8')
-    .digest();
+  return sha256Digest(sourceString);
 }
 
 function getUnitContentHash(objUnit) {
@@ -421,7 +422,7 @@ export function getUnitHash(objUnit) {
     content_hash: getUnitContentHash(objUnit),
     version: objUnit.version,
     alt: objUnit.alt,
-    authors: objUnit.authors.map(author => ({ address: author.address })), // already sorted
+    authors: objUnit.authors.map((author) => ({ address: author.address })), // already sorted
   };
   if (objUnit.witness_list_unit) objStrippedUnit.witness_list_unit = objUnit.witness_list_unit;
   else objStrippedUnit.witnesses = objUnit.witnesses;
@@ -447,7 +448,7 @@ export function isNonemptyObject(obj) {
  */
 export function hasFieldsExcept(obj, arrFields) {
   let exists = false;
-  Object.keys(obj).forEach(field => {
+  Object.keys(obj).forEach((field) => {
     if (arrFields.indexOf(field) === -1) {
       exists = true;
     }

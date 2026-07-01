@@ -7,27 +7,32 @@ describe('Client', () => {
     client = new Client('wss://obyte.org/bb');
   });
 
+  afterAll(() => {
+    // close the live socket so jest can exit cleanly (no leaked handle)
+    if (client) client.close();
+  });
+
   it('should create client', () => {
     expect(typeof client).toBe('object');
   });
 
-  it('should support callbacks', done => {
+  it('should support callbacks', (done) => {
     client.api.getJoint('oj8yEksX9Ubq7lLc+p6F2uyHUuynugeVq4+ikT67X6E=', () => done());
   });
 
-  it('should support promises', done => {
+  it('should support promises', (done) => {
     client.api.getJoint('oj8yEksX9Ubq7lLc+p6F2uyHUuynugeVq4+ikT67X6E=').then(() => done());
   });
 
-  it('should support callbacks with empty params', done => {
+  it('should support callbacks with empty params', (done) => {
     client.api.getBots(() => done());
   });
 
-  it('should support promises with empty params', done => {
+  it('should support promises with empty params', (done) => {
     client.api.getBots().then(() => done());
   });
 
-  it('should catch error with promises', done => {
+  it('should catch error with promises', (done) => {
     client.api.getParentsAndLastBallAndWitnessListUnit().catch(() => done());
   });
 

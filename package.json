@@ -1,6 +1,6 @@
 {
   "name": "obyte",
-  "version": "0.1.24",
+  "version": "0.2.0",
   "description": "A pure and powerful JavaScript Obyte library",
   "homepage": "https://obytejs.com",
   "browser": "dist/obyte.min.js",
@@ -13,12 +13,17 @@
     "url": "https://github.com/bonustrack/obyte.js/issues"
   },
   "main": "lib/index.js",
+  "module": "lib/esm/index.js",
   "files": [
     "dist",
     "lib"
   ],
   "scripts": {
-    "build": "taskr cjs && webpack",
+    "clean": "rimraf lib dist",
+    "prebuild": "npm run clean",
+    "build:cjs": "babel src --out-dir lib --copy-files --no-copy-ignored --ignore src/secp256k1-browser.js",
+    "build:esm": "babel src --out-dir lib/esm --config-file ./babel.esm.json --copy-files --no-copy-ignored --ignore src/secp256k1-browser.js",
+    "build": "npm run build:cjs && npm run build:esm && webpack && cp index.d.ts dist/index.d.ts",
     "lint": "eslint 'src/**/*.js'",
     "prettier": "prettier 'src/**/*.js' --list-different",
     "test": "jest",
@@ -26,32 +31,31 @@
   },
   "license": "MIT",
   "dependencies": {
-    "babel-runtime": "^6.26.0",
-    "create-hash": "^1.2.0",
-    "secp256k1": "^3.7.1",
-    "thirty-two": "^1.0.2",
-    "wif": "^2.0.6",
-    "ws": "^7.1.0"
+    "@babel/runtime": "^7.20.0",
+    "@noble/hashes": "^1.8.0",
+    "@scure/base": "^1.2.6",
+    "secp256k1": "^5.0.1",
+    "ws": "^7.5.11"
   },
   "devDependencies": {
-    "@taskr/babel": "^1.1.0",
-    "babel-core": "^6.26.3",
-    "babel-eslint": "^10.0.2",
-    "babel-loader": "^7.1.5",
-    "babel-plugin-add-module-exports": "^1.0.2",
-    "babel-plugin-transform-object-rest-spread": "^6.26.0",
-    "babel-plugin-transform-runtime": "^6.23.0",
-    "babel-preset-env": "^1.7.0",
-    "eslint": "^6.0.1",
-    "eslint-config-airbnb-base": "^13.2.0",
-    "eslint-config-prettier": "^6.0.0",
-    "eslint-plugin-import": "^2.18.0",
-    "eslint-plugin-prettier": "^3.1.0",
-    "jest": "^23.6.0",
-    "prettier": "^1.18.2",
-    "taskr": "^1.1.0",
-    "webpack": "^4.36.1",
-    "webpack-cli": "^3.3.6",
-    "webpack-visualizer-plugin": "^0.1.11"
-  }
+    "@babel/cli": "^7.20.0",
+    "@babel/core": "^7.20.0",
+    "@babel/plugin-transform-runtime": "^7.20.0",
+    "@babel/preset-env": "^7.20.0",
+    "@noble/curves": "^1.9.7",
+    "babel-jest": "^30.0.0",
+    "babel-loader": "^9.1.0",
+    "babel-plugin-add-module-exports": "^1.0.4",
+    "eslint": "^8.57.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.0",
+    "eslint-plugin-prettier": "^5.1.0",
+    "jest": "^30.0.0",
+    "prettier": "^3.2.0",
+    "rimraf": "^5.0.10",
+    "webpack": "^5.90.0",
+    "webpack-cli": "^5.1.0"
+  },
+  "sideEffects": false
 }
